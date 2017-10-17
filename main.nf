@@ -19,13 +19,14 @@
  
  
 /* 
- * Proof of concept of a RNAseq pipeline implemented with Nextflow
+ * Proof of concept of a RNAseq pipeline for ENCODE data implemented with Nextflow
  * 
  * Authors:
  * - Paolo Di Tommaso <paolo.ditommaso@gmail.com>
  * - Emilio Palumbo <emiliopalumbo@gmail.com> 
  * - Evan Floden <evanfloden@gmail.com> 
- */ 
+ * - Francesco Strozzi <francesco.strozzi@gmail.com>
+*/ 
 
  
 /*
@@ -33,99 +34,152 @@
  * given `params.foo` specify on the run command line `--foo some_value`.  
  */
  
-params.reads = "$baseDir/data/ggal/*_{1,2}.fq"
-params.transcriptome = "$baseDir/data/ggal/ggal_1_48850000_49020000.Ggal71.500bpflank.fa"
-params.outdir = "results"
-params.multiqc = "$baseDir/multiqc"
+params.transcriptome = "ftp://ftp.ensembl.org/pub/release-90/fasta/homo_sapiens/cdna/Homo_sapiens.GRCh38.cdna.all.fa.gz"
+params.metadata = "metadata.tsv"
+params.output = "results"
 
 log.info """\
-         R N A S E Q - N F   P I P E L I N E    
-         ===================================
+         R N A S E Q - N F   P I P E L I N E   E N C O D E   
+         =================================================
          transcriptome: ${params.transcriptome}
-         reads        : ${params.reads}
-         outdir       : ${params.outdir}
+         metadata     : ${params.metadata}
+         output       : ${params.output}
          """
          .stripIndent()
 
 
-transcriptome_file = file(params.transcriptome)
-multiqc_file = file(params.multiqc)
- 
-
-Channel
-    .fromFilePairs( params.reads )
-    .ifEmpty { error "Cannot find any reads matching: ${params.reads}" }
-    .into { read_pairs_ch; read_pairs2_ch } 
- 
-
 process index {
-    tag "$transcriptome_file.simpleName"
     
+    tag "$transcriptome"
+   
+    cpus 4
+
+    memory '30 GB'
+ 
     input:
-    file transcriptome from transcriptome_file
+    file(transcriptome) from Channel.fromPath(params.transcriptome)
      
     output:
     file 'index' into index_ch
 
-    script:       
+    script:
     """
     salmon index --threads $task.cpus -t $transcriptome -i index
     """
 }
  
  
+process parseEncode {
+
+    tag "$params.metadata"
+
+    cpus 2
+
+    memory '4 GB'
+
+    container 'job-definition://python3'
+
+    input:
+    file(metadata) from Channel.fromPath(params.metadata)
+
+	output:
+	stdout encode_files_ch_1
+    stdout encode_files_ch_2
+    
+    """
+    #!/usr/bin/env python
+
+    from __future__ import print_function
+    import sys
+    from collections import defaultdict
+
+    pairs = defaultdict(list)
+    for line in open("$metadata",encoding='utf-8'):
+        data = line.rstrip().split(\"\t\")
+        file_type = data[1]
+        sample_type = data[6].replace('\\'','').replace(' ','_')
+        file_url = data[41]
+        dbxref = data[40].replace(':','-')
+        seq_type = data[33]
+        strand_specific = data[23]
+        if file_type == "fastq" and seq_type == "paired-ended":
+            pairs[dbxref].append(file_url)
+            if len(pairs[dbxref]) == 2:
+                print(",".join([dbxref,sample_type,strand_specific]+pairs[dbxref]+list(map(lambda x: x.split("/")[-1],pairs[dbxref])) ))
+                break
+    """
+
+}
+
 process quant {
-    tag "$pair_id"
-     
+    
+    tag "$dbxref"
+    
+    cpus 8
+
+    memory '8 GB' 
+ 
     input:
     file index from index_ch
-    set pair_id, file(reads) from read_pairs_ch
+    set dbxref,sample_type,strand_specific,fastq_url_1,fastq_url_2,fastq_1,fastq_2 from encode_files_ch_1.splitCsv()
  
     output:
-    file(pair_id) into quant_ch
- 
+    file("${sample_type}-${dbxref}") into quant_ch
+
     script:
+    def libType = strand_specific == "True" ? "S" : "U"
     """
-    salmon quant --threads $task.cpus --libType=U -i index -1 ${reads[0]} -2 ${reads[1]} -o $pair_id
+    wget $fastq_url_1
+    wget $fastq_url_2
+    salmon quant --threads $task.cpus --libType=${libType} -i index -1 ${fastq_1} -2 ${fastq_2} -o ${sample_type}-${dbxref}
     """
 }
   
 process fastqc {
-    tag "FASTQC on $sample_id"
+    
+    tag "FASTQC on $dbxref"
 
+    cpus 2
+
+    memory '8 GB'
+ 
     input:
-    set sample_id, file(reads) from read_pairs2_ch
+    set dbxref,sample_type,strand_specific,fastq_url_1,fastq_url_2,fastq_1,fastq_2 from encode_files_ch_2.splitCsv()
 
     output:
-    file("fastqc_${sample_id}_logs") into fastqc_ch
+    file("fastqc_${dbxref}_logs") into fastqc_ch
 
 
     script:
     """
-    mkdir fastqc_${sample_id}_logs
-    fastqc -o fastqc_${sample_id}_logs -f fastq -q ${reads}
+    wget $fastq_url_1
+    wget $fastq_url_2
+    mkdir fastqc_${dbxref}_logs
+    fastqc -o fastqc_${dbxref}_logs -f fastq -q {$fastq_1} ${fastq_2}
     """  
-}  
+} 
   
   
 process multiqc {
-    publishDir params.outdir, mode:'copy'
+    
+    cpus 2
+
+    memory '8 GB'
+    
+    publishDir params.output, mode:'copy'
        
     input:
     file('*') from quant_ch.mix(fastqc_ch).collect()
-    file(config) from multiqc_file
     
     output:
     file('multiqc_report.html')  
      
     script:
     """
-    cp $config/* .
-    echo "custom_logo: \$PWD/logo.png" >> multiqc_config.yaml
     multiqc . 
     """
 }
  
 workflow.onComplete { 
-	println ( workflow.success ? "\nDone! Open the following report in your browser --> $params.outdir/multiqc_report.html\n" : "Oops .. something went wrong" )
+	println ( workflow.success ? "\nDone! Open the following report in your browser --> $params.output/multiqc_report.html\n" : "Oops .. something went wrong" )
 }
