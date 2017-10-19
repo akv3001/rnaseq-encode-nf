@@ -12,7 +12,8 @@
  
 /* 
  * Example of RNAseq pipeline for ENCODE data implemented with Nextflow
- * 
+ * This example was built based on the Nextflow RNA-seq pipeline https://github.com/nextflow-io/rnaseq-nf
+ *  
  * Authors:
  * - Francesco Strozzi <francesco.strozzi@gmail.com>
  * - Paolo Di Tommaso <paolo.ditommaso@gmail.com>
