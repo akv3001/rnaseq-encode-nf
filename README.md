@@ -49,7 +49,7 @@ To run this pipeline on AWS using the Batch service, you need to:
         pip install awscli
         aws configure
 
-4. Create a local nextflow.config file to specify the AWS Batch exector and parameters, plus the path of the AWS CLI on the AMI:
+4. Create a local nextflow.config file to specify the AWS Batch executor and parameters, plus the path of the AWS CLI on the AMI:
 
         aws {
             region = 'eu-west-1'
