@@ -1,8 +1,9 @@
 # RNAseq-NF ENCODE pipeline 
 
 A basic pipeline for quantification of genomic features from short read data coming from ENCODE project
-implemented with Nextflow. This example can also run locally, however instructions are given to test it
-on AWS Batch service
+implemented with Nextflow. 
+
+This example can also run locally, however instructions are also given to test it specifically on AWS Batch service
 
 [![nextflow](https://img.shields.io/badge/nextflow-%E2%89%A50.24.0-brightgreen.svg)](http://nextflow.io)
 
@@ -15,7 +16,9 @@ on AWS Batch service
 
 1. If you don't have it already install Docker in your computer. Read more [here](https://docs.docker.com/).
 
-2. Install Nextflow (version 0.24.x or higher):
+2. Install Nextflow (version 0.26.x or higher):
+ 
+        export NXF_VER=0.26.0-SNAPSHOT
       
         curl -s https://get.nextflow.io | bash
 
@@ -23,7 +26,7 @@ on AWS Batch service
 
 3. Launch the pipeline execution: 
 
-        ./nextflow run nextflow-io/rnaseq-nf -with-docker
+        ./nextflow run fstrozzi/rnaseq-encode-nf -with-docker
         
 4. When the execution completes open in your browser the report generated at the following path:
 
