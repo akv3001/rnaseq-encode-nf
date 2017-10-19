@@ -22,8 +22,6 @@ This example can also run locally, however instructions are also given to test i
       
         curl -s https://get.nextflow.io | bash
 
-3. Follow the instructions on the Nextflow documentation to 
-
 3. Launch the pipeline execution: 
 
         ./nextflow run fstrozzi/rnaseq-encode-nf -with-docker
@@ -48,27 +46,27 @@ To run this pipeline on AWS using the Batch service, you need to:
 
 3. Install the AWS keys on the machine where you will execute Nextflow:
 
-    pip install awscli
-    aws configure
+        pip install awscli
+        aws configure
 
 4. Create a local nextflow.config file to specify the AWS Batch exector and parameters, plus the path of the AWS CLI on the AMI:
 
-    aws {
-        region = 'eu-west-1'
-    }
+        aws {
+            region = 'eu-west-1'
+        }
 
-    executor {
-        name = 'awsbatch'
-        awscli = '/scratch/miniconda/bin/aws'
-    }
+        executor {
+            name = 'awsbatch'
+            awscli = '/scratch/miniconda/bin/aws'
+        }
 
-    process {
-        queue = 'my-aws-batch-queue'
-    }
+        process {
+            queue = 'my-aws-batch-queue'
+        }
 
 5. Run the pipeline
 
-    ./nextflow fstrozzi/rnaseq-encode-nf -w s3://bucket/prefix
+        ./nextflow fstrozzi/rnaseq-encode-nf -w s3://bucket/prefix
 
 ## Cluster support
 
