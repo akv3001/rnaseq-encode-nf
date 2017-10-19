@@ -1,15 +1,15 @@
-# RNAseq-NF pipeline 
+# RNAseq-NF ENCODE pipeline 
 
-A basic pipeline for quantification of genomic features from short read data
-implemented with Nextflow.
+A basic pipeline for quantification of genomic features from short read data coming from ENCODE project
+implemented with Nextflow. This example can also run locally, however instructions are given to test it
+on AWS Batch service
 
 [![nextflow](https://img.shields.io/badge/nextflow-%E2%89%A50.24.0-brightgreen.svg)](http://nextflow.io)
-[![CircleCI status](https://circleci.com/gh/nextflow-io/rnaseq-nf.png?style=shield)](https://circleci.com/gh/nextflow-io/rnaseq-nf/tree/master)
 
 ## Requirements 
 
 * Unix-like operating system (Linux, macOS, etc)
-* Java 7/8 
+* Java 8 
 
 ## Quickstart 
 
@@ -18,6 +18,8 @@ implemented with Nextflow.
 2. Install Nextflow (version 0.24.x or higher):
       
         curl -s https://get.nextflow.io | bash
+
+3. Follow the instructions on the Nextflow documentation to 
 
 3. Launch the pipeline execution: 
 
@@ -33,6 +35,38 @@ Note: the very first time you execute it, it will take a few minutes to download
 from this GitHub repository and the the associated Docker images needed to execute the pipeline.  
 
 
+## AWS Batch support
+
+To run this pipeline on AWS using the Batch service, you need to:
+
+1. Create an AWS Batch computing environment and queue, you can skip the job definition since Nextflow will do that for you. Follow the instructions on the [AWS website](http://docs.aws.amazon.com/batch/latest/userguide/Batch_GetStarted.html).
+
+2. Follow the indications on the Nextflow [docs](https://github.com/nextflow-io/nextflow/blob/master/docs/awscloud.rst#allows-batch) to prepare an AMI with enough disk space to run the workflow.
+
+3. Install the AWS keys on the machine where you will execute Nextflow:
+
+    pip install awscli
+    aws configure
+
+4. Create a local nextflow.config file to specify the AWS Batch exector and parameters, plus the path of the AWS CLI on the AMI:
+
+    aws {
+        region = 'eu-west-1'
+    }
+
+    executor {
+        name = 'awsbatch'
+        awscli = '/scratch/miniconda/bin/aws'
+    }
+
+    process {
+        queue = 'my-aws-batch-queue'
+    }
+
+5. Run the pipeline
+
+    ./nextflow fstrozzi/rnaseq-encode-nf -w s3://bucket/prefix
+
 ## Cluster support
 
 RNASeq-NF execution relies on [Nextflow](http://www.nextflow.io) framework which provides an 
@@ -46,7 +80,6 @@ Currently the following resource manager platforms are supported:
   + Platform LSF
   + SLURM
   + PBS/Torque
-
 
 By default the pipeline is parallelized by spawning multiple threads in the machine where the script is launched.
 
@@ -68,5 +101,5 @@ RNASeq-NF uses the following software components and tools:
 
 * [Salmon](https://combine-lab.github.io/salmon/) 0.8.2
 * [FastQC](https://www.bioinformatics.babraham.ac.uk/projects/fastqc/) 0.11.5
-* [Multiqc](https://multiqc.info) 1.0
+* [Multiqc](https://multiqc.info) 1.2
 

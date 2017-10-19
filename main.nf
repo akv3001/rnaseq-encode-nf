@@ -1,31 +1,22 @@
 /*
- * Copyright (c) 2013-2017, Centre for Genomic Regulation (CRG) and the authors.
  *
- *   This file is part of 'RNASEQ-NF'.
- *
- *   RNASEQ-NF is free software: you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation, either version 3 of the License, or
- *   (at your option) any later version.
- *
- *   RNASEQ-NF is distributed in the hope that it will be useful,
+ *   RNASEQ-ENCODE-NF is distributed in the hope that it will be useful,
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *   GNU General Public License for more details.
  *
  *   You should have received a copy of the GNU General Public License
- *   along with RNASEQ-NF.  If not, see <http://www.gnu.org/licenses/>.
+ *   along with RNASEQ-ENCODE-NF.  If not, see <http://www.gnu.org/licenses/>.
  */
  
  
 /* 
- * Proof of concept of a RNAseq pipeline for ENCODE data implemented with Nextflow
+ * Example of RNAseq pipeline for ENCODE data implemented with Nextflow
  * 
  * Authors:
- * - Paolo Di Tommaso <paolo.ditommaso@gmail.com>
- * - Emilio Palumbo <emiliopalumbo@gmail.com> 
- * - Evan Floden <evanfloden@gmail.com> 
  * - Francesco Strozzi <francesco.strozzi@gmail.com>
+ * - Paolo Di Tommaso <paolo.ditommaso@gmail.com>
+ * - Evan Floden <evanfloden@gmail.com>
 */ 
 
  
@@ -35,11 +26,11 @@
  */
  
 params.transcriptome = "ftp://ftp.ensembl.org/pub/release-90/fasta/homo_sapiens/cdna/Homo_sapiens.GRCh38.cdna.all.fa.gz"
-params.metadata = "metadata.tsv"
+params.metadata = "$baseDir/data/metadata.small.tsv"
 params.output = "results"
 
 log.info """\
-         R N A S E Q - N F   P I P E L I N E   E N C O D E   
+         R N A S E Q - N F   E N C O D E   P I P E L I N E
          =================================================
          transcriptome: ${params.transcriptome}
          metadata     : ${params.metadata}
@@ -57,8 +48,8 @@ process index {
     memory '30 GB'
  
     input:
-    file(transcriptome) from Channel.fromPath(params.transcriptome)
-     
+    file transcriptome from file(params.transcriptome)   
+ 
     output:
     file 'index' into index_ch
 
@@ -77,15 +68,12 @@ process parseEncode {
 
     memory '4 GB'
 
-    container 'job-definition://python3'
-
     input:
     file(metadata) from Channel.fromPath(params.metadata)
 
 	output:
-	stdout encode_files_ch_1
-    stdout encode_files_ch_2
-    
+    stdout into (encode_files_ch_1, encode_files_ch_2)
+
     """
     #!/usr/bin/env python
 
@@ -93,22 +81,28 @@ process parseEncode {
     import sys
     from collections import defaultdict
 
-    pairs = defaultdict(list)
-    for line in open("$metadata",encoding='utf-8'):
-        data = line.rstrip().split(\"\t\")
-        file_type = data[1]
-        sample_type = data[6].replace('\\'','').replace(' ','_')
-        file_url = data[41]
-        dbxref = data[40].replace(':','-')
-        seq_type = data[33]
-        strand_specific = data[23]
-        if file_type == "fastq" and seq_type == "paired-ended":
-            pairs[dbxref].append(file_url)
-            if len(pairs[dbxref]) == 2:
-                print(",".join([dbxref,sample_type,strand_specific]+pairs[dbxref]+list(map(lambda x: x.split("/")[-1],pairs[dbxref])) ))
-                break
+    sra = []
+    with open("$metadata") as f:
+        next(f)
+        for line in f:
+            data = line.rstrip().split(\"\t\")
+            file_type = data[1]
+            sample_type = data[6].replace('\\'','').replace(' ','_')
+            if data[40]:
+                dbxref = data[40].split(':')[1]
+                seq_type = data[33]
+                strand_specific = data[23]
+                if file_type == "fastq" and seq_type == "paired-ended":
+                    if not dbxref in sra:
+                        sra_id = dbxref.split("SRR")[1]
+                        url = "ftp://ftp.sra.ebi.ac.uk/vol1/fastq/{0}/".format(dbxref[0:6])
+                        if len(sra_id) == 6: url += "{0}".format(dbxref)
+                        if len(sra_id) == 7: url += "00{0}/{1}".format(sra_id[-1],dbxref)
+                        if len(sra_id) == 8: url += "0{0}/{1}".format(sra_id[-2:-1],dbxref)
+                        if len(sra_id) == 9: url += "{0}/{1}".format(sra_id[-3:-1],dbxref)
+                        print(",".join([dbxref,sample_type,strand_specific,url]))
+                        sra.append(dbxref)
     """
-
 }
 
 process quant {
@@ -117,11 +111,11 @@ process quant {
     
     cpus 8
 
-    memory '8 GB' 
+    memory '16 GB' 
  
     input:
     file index from index_ch
-    set dbxref,sample_type,strand_specific,fastq_url_1,fastq_url_2,fastq_1,fastq_2 from encode_files_ch_1.splitCsv()
+    set dbxref,sample_type,strand_specific,url from encode_files_ch_1.splitCsv()
  
     output:
     file("${sample_type}-${dbxref}") into quant_ch
@@ -129,9 +123,9 @@ process quant {
     script:
     def libType = strand_specific == "True" ? "S" : "U"
     """
-    wget $fastq_url_1
-    wget $fastq_url_2
-    salmon quant --threads $task.cpus --libType=${libType} -i index -1 ${fastq_1} -2 ${fastq_2} -o ${sample_type}-${dbxref}
+    wget -q ${url}/${dbxref}_1.fastq.gz
+    wget -q ${url}/${dbxref}_2.fastq.gz
+    salmon quant --threads $task.cpus --libType=${libType} -i index -1 ${dbxref}_1.fastq.gz -2 ${dbxref}_2.fastq.gz -o ${sample_type}-${dbxref}
     """
 }
   
@@ -144,7 +138,7 @@ process fastqc {
     memory '8 GB'
  
     input:
-    set dbxref,sample_type,strand_specific,fastq_url_1,fastq_url_2,fastq_1,fastq_2 from encode_files_ch_2.splitCsv()
+    set dbxref,sample_type,strand_specific,url from encode_files_ch_2.splitCsv()
 
     output:
     file("fastqc_${dbxref}_logs") into fastqc_ch
@@ -152,10 +146,10 @@ process fastqc {
 
     script:
     """
-    wget $fastq_url_1
-    wget $fastq_url_2
+    wget -q ${url}/${dbxref}_1.fastq.gz
+    wget -q ${url}/${dbxref}_2.fastq.gz
     mkdir fastqc_${dbxref}_logs
-    fastqc -o fastqc_${dbxref}_logs -f fastq -q {$fastq_1} ${fastq_2}
+    fastqc -t $task.cpus -o fastqc_${dbxref}_logs -f fastq -q ${dbxref}_1.fastq.gz ${dbxref}_2.fastq.gz
     """  
 } 
   
