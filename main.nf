@@ -122,7 +122,7 @@ process quant {
     file("${sample_type}-${dbxref}") into quant_ch
 
     script:
-    def libType = strand_specific == "True" ? "S" : "U"
+    def libType = strand_specific == "True" ? "SF" : "U"
     """
     wget -q ${url}/${dbxref}_1.fastq.gz
     wget -q ${url}/${dbxref}_2.fastq.gz
