@@ -51,10 +51,6 @@ To run this pipeline on AWS using the Batch service, you need to:
 
 4. Create a local nextflow.config file to specify the AWS Batch executor and parameters, plus the path of the AWS CLI on the AMI:
 
-        aws {
-            region = 'eu-west-1'
-        }
-
         executor {
             name = 'awsbatch'
             awscli = '/scratch/miniconda/bin/aws'
