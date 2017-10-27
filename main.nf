@@ -18,7 +18,7 @@
  * - Francesco Strozzi <francesco.strozzi@gmail.com>
  * - Paolo Di Tommaso <paolo.ditommaso@gmail.com>
  * - Evan Floden <evanfloden@gmail.com>
-*/ 
+*/
 
  
 /*
@@ -27,8 +27,9 @@
  */
  
 params.transcriptome = "ftp://ftp.ensembl.org/pub/release-90/fasta/homo_sapiens/cdna/Homo_sapiens.GRCh38.cdna.all.fa.gz"
-params.metadata = "$baseDir/data/metadata.small.tsv"
+params.metadata = "$baseDir/data/metadata.tsv"
 params.output = "results"
+params.max_samples = -1 
 
 log.info """\
          R N A S E Q - N F   E N C O D E   P I P E L I N E
@@ -36,20 +37,28 @@ log.info """\
          transcriptome: ${params.transcriptome}
          metadata     : ${params.metadata}
          output       : ${params.output}
+         max_samples  : ${params.max_samples == -1 ? '-' : params.max_samples}
          """
          .stripIndent()
 
+/* 
+ * Basic validation 
+ */
+metadata_file = file(params.metadata)
+transcriptome_file = file(params.transcriptome)
 
+if( !metadata_file.exists() ) error "Metadata file does not exist: $metadata_file"
+if( !transcriptome_file.exists() ) error "Transcriptome file does not exist: $transcriptome_file" 
+
+/*
+ * Creates the Salmon index for the transcriptome file 
+ */
 process index {
     
     tag "$transcriptome"
-   
-    cpus 4
 
-    memory '30 GB'
- 
     input:
-    file transcriptome from file(params.transcriptome)   
+    file transcriptome from transcriptome_file  
  
     output:
     file 'index' into index_ch
@@ -60,20 +69,18 @@ process index {
     """
 }
  
- 
+/* 
+ * Parse the encode metadata file and extract the required reads URLs
+ */ 
 process parseEncode {
 
     tag "$params.metadata"
 
-    cpus 2
-
-    memory '4 GB'
-
     input:
-    file(metadata) from Channel.fromPath(params.metadata)
+    file(metadata) from metadata_file
 
-	output:
-    stdout into (encode_files_ch_1, encode_files_ch_2)
+    output:
+    stdout into encode_csv_ch
 
     """
     #!/usr/bin/env python
@@ -106,17 +113,26 @@ process parseEncode {
     """
 }
 
+/* 
+ * Parse the CVS file 
+ * Takes only the first `max_samples` entries
+ * Creates two separate channels 
+ */
+encode_csv_ch
+        .splitCsv()
+	.take(params.max_samples)
+        .into { encode_files_ch1; encode_files_ch2 }
+
+/*
+ * Quantification step 
+ */
 process quant {
     
     tag "$dbxref"
     
-    cpus 8
-
-    memory '16 GB' 
- 
     input:
     file index from index_ch
-    set dbxref,sample_type,strand_specific,url from encode_files_ch_1.splitCsv()
+    set dbxref,sample_type,strand_specific,url from encode_files_ch1
  
     output:
     file("${sample_type}-${dbxref}") into quant_ch
@@ -124,42 +140,42 @@ process quant {
     script:
     def libType = strand_specific == "True" ? "SF" : "U"
     """
-    wget -q ${url}/${dbxref}_1.fastq.gz
-    wget -q ${url}/${dbxref}_2.fastq.gz
+    wget -q ${url}/${dbxref}_1.fastq.gz &
+    wget -q ${url}/${dbxref}_2.fastq.gz &
+    wait 
     salmon quant --threads $task.cpus --libType=${libType} -i index -1 ${dbxref}_1.fastq.gz -2 ${dbxref}_2.fastq.gz -o ${sample_type}-${dbxref}
     """
 }
   
+/* 
+ * Peforms reads quality control 
+ */
 process fastqc {
     
     tag "FASTQC on $dbxref"
 
-    cpus 2
-
-    memory '8 GB'
- 
     input:
-    set dbxref,sample_type,strand_specific,url from encode_files_ch_2.splitCsv()
+    set dbxref,sample_type,strand_specific,url from encode_files_ch2
 
     output:
     file("fastqc_${dbxref}_logs") into fastqc_ch
 
-
-    script:
+    script: 
+    // note -- fastq skips quietly any missing read files, add an explicit check to stop the task if any input is missing
     """
-    wget -q ${url}/${dbxref}_1.fastq.gz
-    wget -q ${url}/${dbxref}_2.fastq.gz
+    wget -q ${url}/${dbxref}_1.fastq.gz & 
+    wget -q ${url}/${dbxref}_2.fastq.gz &
+    wait 
+    if [[ ! -e ${dbxref}_1.fastq.gz || ! -e ${dbxref}_2.fastq.gz ]]; then echo Missing one or more read files; exit 1; fi 
     mkdir fastqc_${dbxref}_logs
     fastqc -t $task.cpus -o fastqc_${dbxref}_logs -f fastq -q ${dbxref}_1.fastq.gz ${dbxref}_2.fastq.gz
     """  
 } 
   
-  
+/*
+ * Produces the MultiQC final report 
+ */  
 process multiqc {
-    
-    cpus 2
-
-    memory '8 GB'
     
     publishDir params.output, mode:'copy'
        
@@ -175,6 +191,9 @@ process multiqc {
     """
 }
  
+/* 
+ * Notify the completion
+ */
 workflow.onComplete { 
 	println ( workflow.success ? "\nDone! Open the following report in your browser --> $params.output/multiqc_report.html\n" : "Oops .. something went wrong" )
 }
