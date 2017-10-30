@@ -28,7 +28,7 @@
  
 params.transcriptome = "ftp://ftp.ensembl.org/pub/release-90/fasta/homo_sapiens/cdna/Homo_sapiens.GRCh38.cdna.all.fa.gz"
 params.metadata = "$baseDir/data/metadata.tsv"
-params.output = "results"
+params.output = "."
 params.max_samples = -1 
 
 log.info """\
