@@ -143,6 +143,8 @@ process quant {
     wget -q ${url}/${dbxref}_1.fastq.gz &
     wget -q ${url}/${dbxref}_2.fastq.gz &
     wait 
+    [[ ! -f ${dbxref}_1.fastq.gz ]] && echo Failed to download ${url}/${dbxref}_1.fastq.gz && exit
+    [[ ! -f ${dbxref}_2.fastq.gz ]] && echo Failed to download ${url}/${dbxref}_2.fastq.gz && exit
     salmon quant --threads $task.cpus --libType=${libType} -i index -1 ${dbxref}_1.fastq.gz -2 ${dbxref}_2.fastq.gz -o ${sample_type}-${dbxref}
     """
 }
@@ -166,7 +168,8 @@ process fastqc {
     wget -q ${url}/${dbxref}_1.fastq.gz & 
     wget -q ${url}/${dbxref}_2.fastq.gz &
     wait 
-    if [[ ! -e ${dbxref}_1.fastq.gz || ! -e ${dbxref}_2.fastq.gz ]]; then echo Missing one or more read files; exit 1; fi 
+    [[ ! -f ${dbxref}_1.fastq.gz ]] && echo Failed to download ${url}/${dbxref}_1.fastq.gz && exit
+    [[ ! -f ${dbxref}_2.fastq.gz ]] && echo Failed to download ${url}/${dbxref}_2.fastq.gz && exit
     mkdir fastqc_${dbxref}_logs
     fastqc -t $task.cpus -o fastqc_${dbxref}_logs -f fastq -q ${dbxref}_1.fastq.gz ${dbxref}_2.fastq.gz
     """  
