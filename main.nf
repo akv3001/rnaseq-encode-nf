@@ -120,7 +120,7 @@ process parseEncode {
  */
 encode_csv_ch
         .splitCsv()
-	.take(params.max_samples)
+        .take(params.max_samples)
         .into { encode_files_ch1; encode_files_ch2 }
 
 /*
